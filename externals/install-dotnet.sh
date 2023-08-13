@@ -310,6 +310,10 @@ get_machine_architecture() {
             echo "s390x"
             return 0
             ;;
+        ppc64le)
+            echo "ppc64le"
+            return 0
+            ;;
         esac
     fi
 
@@ -345,6 +349,10 @@ get_normalized_architecture_from_architecture() {
             ;;
         s390x)
             echo "s390x"
+            return 0
+            ;;
+        ppc64le)
+            echo "ppc64le"
             return 0
             ;;
     esac
@@ -451,6 +459,10 @@ get_normalized_channel() {
 
     local channel="$(to_lowercase "$1")"
 
+    if [[ $channel == current ]]; then
+        say_warning 'Value "Current" is deprecated for -Channel option. Use "STS" instead.'
+    fi
+
     if [[ $channel == release/* ]]; then
         say_warning 'Using branch name with -Channel option is no longer supported with newer releases. Use -Quality option with a channel in X.Y format instead.';
     fi
@@ -459,6 +471,14 @@ get_normalized_channel() {
         case "$channel" in
             lts)
                 echo "LTS"
+                return 0
+                ;;
+            sts)
+                echo "STS"
+                return 0
+                ;;
+            current)
+                echo "STS"
                 return 0
                 ;;
             *)
@@ -1127,10 +1147,11 @@ downloadwget() {
 get_download_link_from_aka_ms() {
     eval $invocation
 
-    #quality is not supported for LTS or current channel
-    if [[ ! -z "$normalized_quality"  && ("$normalized_channel" == "LTS" || "$normalized_channel" == "current") ]]; then
+    #quality is not supported for LTS or STS channel
+    #STS maps to current
+    if [[ ! -z "$normalized_quality"  && ("$normalized_channel" == "LTS" || "$normalized_channel" == "STS") ]]; then
         normalized_quality=""
-        say_warning "Specifying quality for current or LTS channel is not supported, the quality will be ignored."
+        say_warning "Specifying quality for STS or LTS channel is not supported, the quality will be ignored."
     fi
 
     say_verbose "Retrieving primary payload URL from aka.ms for channel: '$normalized_channel', quality: '$normalized_quality', product: '$normalized_product', os: '$normalized_os', architecture: '$normalized_architecture'." 
@@ -1239,7 +1260,7 @@ generate_akams_links() {
 
     normalized_version="$(to_lowercase "$version")"
     if [[ "$normalized_version" != "latest" ]] && [ -n "$normalized_quality" ]; then
-        say_err "Quality and Version options are not allowed to be specified simultaneously. See https://docs.microsoft.com/en-us/dotnet/core/tools/dotnet-install-script#options for details."
+        say_err "Quality and Version options are not allowed to be specified simultaneously. See https://learn.microsoft.com/dotnet/core/tools/dotnet-install-script#options for details."
         return 1
     fi
 
@@ -1604,18 +1625,23 @@ do
             echo "       $script_name -h|-?|--help"
             echo ""
             echo "$script_name is a simple command line interface for obtaining dotnet cli."
+            echo "    Note that the intended use of this script is for Continuous Integration (CI) scenarios, where:"
+            echo "    - The SDK needs to be installed without user interaction and without admin rights."
+            echo "    - The SDK installation doesn't need to persist across multiple CI runs."
+            echo "    To set up a development environment or to run apps, use installers rather than this script. Visit https://dotnet.microsoft.com/download to get the installer."
             echo ""
             echo "Options:"
             echo "  -c,--channel <CHANNEL>         Download from the channel specified, Defaults to \`$channel\`."
             echo "      -Channel"
             echo "          Possible values:"
-            echo "          - Current - most current release"
-            echo "          - LTS - most current supported release"
+            echo "          - STS - the most recent Standard Term Support release"
+            echo "          - LTS - the most recent Long Term Support release"
             echo "          - 2-part version in a format A.B - represents a specific release"
             echo "              examples: 2.0; 1.0"
             echo "          - 3-part version in a format A.B.Cxx - represents a specific SDK release"
             echo "              examples: 5.0.1xx, 5.0.2xx."
             echo "              Supported since 5.0 release"
+            echo "          Warning: Value 'Current' is deprecated for the Channel parameter. Use 'STS' instead."
             echo "          Note: The version parameter overrides the channel parameter when any version other than 'latest' is used."
             echo "  -v,--version <VERSION>         Use specific VERSION, Defaults to \`$version\`."
             echo "      -Version"
@@ -1626,7 +1652,7 @@ do
             echo "  -q,--quality <quality>         Download the latest build of specified quality in the channel."
             echo "      -Quality"
             echo "          The possible values are: daily, signed, validated, preview, GA."
-            echo "          Works only in combination with channel. Not applicable for current and LTS channels and will be ignored if those channels are used." 
+            echo "          Works only in combination with channel. Not applicable for STS and LTS channels and will be ignored if those channels are used." 
             echo "          For SDK use channel in A.B.Cxx format. Using quality for SDK together with channel in A.B format is not supported." 
             echo "          Supported since 5.0 release." 
             echo "          Note: The version parameter overrides the channel parameter when any version other than 'latest' is used, and therefore overrides the quality."
@@ -1637,7 +1663,7 @@ do
             echo "      -InstallDir"
             echo "  --architecture <ARCHITECTURE>      Architecture of dotnet binaries to be installed, Defaults to \`$architecture\`."
             echo "      --arch,-Architecture,-Arch"
-            echo "          Possible values: x64, arm, arm64 and s390x"
+            echo "          Possible values: x64, arm, arm64, s390x and ppc64le"
             echo "  --os <system>                    Specifies operating system to be used when selecting the installer."
             echo "          Overrides the OS determination approach used by the script. Supported values: osx, linux, linux-musl, freebsd, rhel.6."
             echo "          In case any other value is provided, the platform will be determined by the script based on machine configuration."
@@ -1680,10 +1706,10 @@ do
     shift
 done
 
-say "Note that the intended use of this script is for Continuous Integration (CI) scenarios, where:"
-say "- The SDK needs to be installed without user interaction and without admin rights."
-say "- The SDK installation doesn't need to persist across multiple CI runs."
-say "To set up a development environment or to run apps, use installers rather than this script. Visit https://dotnet.microsoft.com/download to get the installer.\n"
+say_verbose "Note that the intended use of this script is for Continuous Integration (CI) scenarios, where:"
+say_verbose "- The SDK needs to be installed without user interaction and without admin rights."
+say_verbose "- The SDK installation doesn't need to persist across multiple CI runs."
+say_verbose "To set up a development environment or to run apps, use installers rather than this script. Visit https://dotnet.microsoft.com/download to get the installer.\n"
 
 if [ "$internal" = true ] && [ -z "$(echo $feed_credential)" ]; then
     message="Provide credentials via --feed-credential parameter."
@@ -1716,5 +1742,5 @@ else
 fi
 
 say "Note that the script does not resolve dependencies during installation."
-say "To check the list of dependencies, go to https://docs.microsoft.com/dotnet/core/install, select your operating system and check the \"Dependencies\" section."
+say "To check the list of dependencies, go to https://learn.microsoft.com/dotnet/core/install, select your operating system and check the \"Dependencies\" section."
 say "Installation finished successfully."
